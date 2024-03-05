@@ -1,0 +1,63 @@
+#!/bin/bash
+
+rm -rf test/ ; cp -r unziped/ test/
+
+divdir()
+{
+for file in $1*
+do 
+	path="${file%%_L*}"
+	mkdir -p $path
+	result="${path#*/}"
+	filename_R1="$1${result}_L001_R1_001.fastq.gz"
+	filename_R2="$1${result}_L001_R2_001.fastq.gz"
+	mv $filename_R1 $filename_R2 $path 
+done
+}
+
+processing()
+{
+# тут вопрос Надо ли обрезать последний нуклеотид? Довольно тяжело привязать bbmap к пайплайну
+# я отложу эту задачу до конца пайплайна, потом может быть придумаю что-то
+#
+#array=($(ls $dr))
+#echo $dr
+#echo "Array" ${array[*]}
+#n=$(seqkit stats $dr/${array[0]} | awk '{print $NF}' | awk 'FNR == 2 {print}')
+#remainder=$(( n % 5 ))
+#file1=${dr}/${array[0]}
+#file2=${dr}/${array[1]}
+#if [ $remainder -eq 1 ]
+#then 
+#	
+#	$(bash ~/HistoricalGenetics/bbmap/bbduk.sh in1=${file1} in2=${file2} out1=trimmed_file1.fastq out2=trimmed_file2.fastq ftm=5)
+#
+	cd $1
+	array=($(ls))
+	file1=${array[0]}
+	file2=${array[1]}
+	$(fastqc -q -o FASTQC_PRE $file1 $file2)
+	$(AdapterRemoval --file1 $file1 --file2 $file2 --basename noadapter --collapse --preserve5p --minadapteroverlap 1)
+	mkdir "adapterremoval"; mv "noadapter"* "adapterremoval"
+	echo "DONEDONEDONEDONE"
+	cd ../..
+
+
+}
+
+
+
+if [ "$#" -eq 1 ]; then
+	divdir $1
+	for dir in $1*
+	do
+		processing $dir 
+	done
+elif [ "$#" -eq 2 ] && [ "$1" = "-o" ]; then
+	processing $2 
+else
+	echo "Usage: $0 dirname [-o file1 file2]"
+	exit 1
+fi
+
+
