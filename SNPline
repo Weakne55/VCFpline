@@ -36,10 +36,14 @@ processing()
 	array=($(ls))
 	file1=${array[0]}
 	file2=${array[1]}
+	mkdir "FASTQC_PRE"
 	$(fastqc -q -o FASTQC_PRE $file1 $file2)
 	$(AdapterRemoval --file1 $file1 --file2 $file2 --basename noadapter --collapse --preserve5p --minadapteroverlap 1)
+	cp noadapter.collapsed temp.collapsed
+	file="temp.collapsed"
 	mkdir "adapterremoval"; mv "noadapter"* "adapterremoval"
-	echo "DONEDONEDONEDONE"
+	mkdir "FASTQC_POST"	
+	$(fastqc -q -o FASTQC_POST $file)
 	cd ../..
 
 
