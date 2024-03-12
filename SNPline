@@ -1,7 +1,5 @@
 #!/bin/bash
 
-rm -rf test/ ; cp -r smalltest/ test/
-
 divdir()
 {
 for file in $1*
@@ -42,6 +40,7 @@ processing()
 	echo "ADAPTER REMOVAL DONE"
 	cp noadapter.collapsed temp.collapsed
 	file="temp.collapsed"
+	echo $1
 	mkdir "adapterremoval"; mv "noadapter"* "adapterremoval"
 	mkdir "FASTQC_POST"	
 	$(fastqc -q -o FASTQC_POST $file)
