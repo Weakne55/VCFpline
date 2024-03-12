@@ -67,15 +67,19 @@ processing()
 
 
 if [ "$#" -eq 1 ]; then
-	divdir $1
-	for dir in $1*
+	cp -r $1 snpline_results
+	pap="snpline_results"
+	divdir $pap
+	for dir in $pap*
 	do
 		processing $dir 
 	done
-elif [ "$#" -eq 2 ] && [ "$1" = "-o" ]; then
-	processing $2 
+#elif [ "$#" -eq 2 ] && [ "$1" = "-o" ]; then
+#	cp -r $2 snpline_results
+#	pp="snpline_results"
+#	processing $pp
 else
-	echo "Usage: $0 dirname [-o file1 file2]"
+	echo "Usage: $0 dirname"
 	exit 1
 fi
 
