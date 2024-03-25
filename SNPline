@@ -45,7 +45,7 @@ processing()
 	mkdir "FASTQC_POST"	
 	$(fastqc -q -o FASTQC_POST $file)
 	echo "FASTQC DONE"
-	$(bwa aln ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna $file -t32 -l16500 -n0.01 > final.sai)
+	$(bwa aln ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna $file -t128 -l16500 -n0.01 > final.sai)
 	echo "BWA ALIGN DONE"
 	$(bwa samse ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna final.sai $file | samtools sort -O bam > aln_mapped_sorted.bam)
 	echo "SAMTOOLS SORTING DONE"
@@ -59,6 +59,11 @@ processing()
 	$(bcftools view --include 'FMT/DP>=1' -o bcfview.bcf bcfmpileup.bcf)
 	$(bcftools call -m -v -Ov -o bcfcall.vcf bcfview.bcf)
 	echo "VCF CALLING DONE"
+	awk '/^#/' bcfcall.vcf > chrY.vcf
+	awk '/^NC_000024.10/' bcfcall.vcf >> chrY.vcf
+	python3 ../../y_chr_snp.py
+	awk '{$1=""}1' temp.csv > YSNP.csv
+	rm temp.csv
 	cd ../..
 
 
@@ -74,6 +79,7 @@ if [ "$#" -eq 1 ]; then
 		processing $dir 
 	done
 #elif [ "$#" -eq 2 ] && [ "$1" = "-o" ]; then
+
 #	cp -r $2 snpline_results
 #	pp="snpline_results"
 #	processing $pp
