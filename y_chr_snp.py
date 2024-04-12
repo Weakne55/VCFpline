@@ -1,6 +1,7 @@
 import io
 import os
 import pandas as pd
+import sys
 #import argparse
 
 #parser = argparse.ArgumentParser()
@@ -16,12 +17,13 @@ def read_vcf(path):
         dtype={'#CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,'QUAL': str, 'FILTER': str, 'INFO': str},
         sep='\t').rename(columns={'#CHROM': 'CHROM'})
 
+file = sys.argv[1]
 data = read_vcf('chrY.vcf')
 haplo = pd.read_excel('../../Haplogroups.xlsx',index_col=None).drop(columns=['Unnamed: 0'])
 haplo[['REF', 'ALT']] = haplo['Mutation info'].str.split('->', expand=True)
 haplo.drop(columns=['Mutation info'], inplace=True)
 intersect_df = pd.merge(data, haplo, how ='inner', on =['POS', 'REF', 'ALT']) 
-intersect_df = intersect_df.drop(columns=['ID','FILTER','INFO','FORMAT','aln_mapped_sorted_rmdup.bam','rs #'])
+intersect_df = intersect_df.drop(columns=['ID','FILTER','INFO','FORMAT',file,'rs #'])
 
 def remove_nan_from_list(lst):
     return [x for x in lst if x != 'nan']
