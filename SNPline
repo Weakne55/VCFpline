@@ -36,7 +36,7 @@ processing()
 	#echo "BWA ALIGN DONE"
 	#$(bwa samse ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna final.sai $file | samtools sort -O bam > aln_mapped_sorted.bam)
 	echo "MAPPING AND SORTING DONE"
-	#rm temp.collapsed
+	rm $snfile".collapsed"
 	$(picard MarkDuplicates INPUT=$snfile"_mapped_sorted.bam" OUTPUT=$snfile"_mapped_sorted_rmdup.bam" METRICS_FILE=rmdup.metrics.txt REMOVE_DUPLICATES=TRUE AS=TRUE VALIDATION_STRINGENCY=SILENT)
 	echo "DUPLICATES REMOVING DONE"
 	$(qualimap bamqc -bam $snfile"_mapped_sorted_rmdup.bam" --java-mem-size=4G -gd HUMAN -nt 32 -outdir qualimap)
@@ -53,16 +53,19 @@ processing()
 	$(bcftools call -m -v -Ov -o bcfcall.vcf bcfview.bcf)
 	echo "VCF CALLING DONE"
 	awk '/^#/' bcfcall.vcf > chrY.vcf
+	awk '/^#/' bcfcall.vcf > mito.vcf
+	awk '/^NC_012920.1/' bcfcall.vcf >> mito.vcf
 	awk '/^NC_000024.10/' bcfcall.vcf >> chrY.vcf
 	python3 ../../y_chr_snp.py $snfile"_mapped_sorted_rmdup.bam"
-	awk '{$1=""}1' temp.csv > YSNP.csv
-	rm temp.csv
+	#awk '{$1=""}1' temp.csv > YSNP.csv
+	#rm temp.csv
 	echo "HAPLOGROUP DETECTION DONE"
 
 	mv $snfile".collapsed adapterremoval/"
-	mkdir vcf_calling; mv bcfcall.vcf bcfmpileup.bcf bcfview.bcf YSNP.csv chrY.vcf vcf_calling/
+	mkdir vcf_calling; mv bcfcall.vcf bcfmpileup.bcf bcfview.bcf YSNP.xlsx chrY.vcf mito.vcf vcf_calling/
 	mkdir contamination; mv $snfile"_mapped_sorted_rmdup.hapCon.txt" $snfile"_mapped_sorted_rmdup.hdf5" $snfile"_mapped_sorted_rmdup.mpileup" contamination/
 	mkdir mapping_data; mv $snfile"_mapped_sorted_rmdup.bam.bai" rmdup.metrics.txt $snfile"_mapped_sorted.bam" $snfile"_mapped_sorted_rmdup.bam" mapping_data/
+	$(multiqc .)
 	cd ../..
 
 
@@ -72,13 +75,12 @@ processing()
 
 if [ "$#" -eq 1 ]; then
 	unset DISPLAY
-	cp -r $1 initial_data/
+	cp -r $1 "initial_data_"$1
 	divdir $1
 	for dir in $1*
 	do
 		processing $dir 
 	done
-	$(multiqc $1)
 #elif [ "$#" -eq 2 ] && [ "$1" = "-o" ]; then
 
 #	cp -r $2 snpline_results
