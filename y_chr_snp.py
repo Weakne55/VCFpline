@@ -38,4 +38,9 @@ intersect_df['Haplogroup'] = intersect_df['Haplogroup'].str.replace('~', 'QQQ')
 intersect_df.sort_values(by='Haplogroup', inplace=True, kind='mergesort')
 intersect_df['Haplogroup'] = intersect_df['Haplogroup'].str.replace('QQQ', '~')
 
-intersect_df.to_csv('temp.csv', sep='\t', encoding='utf-8')
+intersect_df.reset_index(drop= True , inplace= True )
+intersect_df = intersect_df.drop(columns=['CHROM'])
+
+#intersect_df.to_csv('YSNP.csv', sep='\t', encoding='utf-8',index=False)
+intersect_df.to_excel("YSNP.xlsx",index=False)
+print("YSNP DONE, PYTHON")

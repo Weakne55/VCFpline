@@ -20,6 +20,10 @@ processing()
 	file1=${array[0]}
 	file2=${array[1]}
 	snfile="${file1%%_L*}"
+	$(touch total.txt)
+	echo "ID sample" $snfile > total.txt
+	total=$(zcat $file1 | echo $((`wc -l`/2))) 
+	echo "total reads" $total >> total.txt
 	mkdir "FASTQC_PRE"
 	$(fastqc -q -o FASTQC_PRE $file1 $file2)
 	echo "FASTQC DONE"
@@ -39,30 +43,47 @@ processing()
 	rm $snfile".collapsed"
 	$(picard MarkDuplicates INPUT=$snfile"_mapped_sorted.bam" OUTPUT=$snfile"_mapped_sorted_rmdup.bam" METRICS_FILE=rmdup.metrics.txt REMOVE_DUPLICATES=TRUE AS=TRUE VALIDATION_STRINGENCY=SILENT)
 	echo "DUPLICATES REMOVING DONE"
+
+	mapped=$(samtools stats $snfile"_mapped_sorted_rmdup.bam" |grep ^SN | cut -f 2- | grep "^reads mapped:" | awk '{print $3}')
+	echo "mapped reads" $mapped>> total.txt
+	percentage=$(bc<<<"scale=3;$mapped/$total*100")
+	echo "% mapped" $percentage"%" >> total.txt
+	
+	size=$(samtools view -H  $snfile"_mapped_sorted_rmdup.bam" | grep -P '^@SQ' | cut -f 3 -d ':' | awk '{sum+=$1} END {print sum}')
+	depth=$(samtools depth $snfile"_mapped_sorted_rmdup.bam" |  awk '{sum+=$3} END { print "Average = ",sum/'$size'}')
+	echo "Depth" $depth"X" >> total.txt
+
+	coverage=$(bedtools bamtobed -i e13_S1_mapped_sorted_rmdup.bam | awk '{sum+=$3-$2} END {print sum/'$size'*100}')
+	echo "Coverage" $coverage"%" >> total.txt
+	
+
+	
 	$(qualimap bamqc -bam $snfile"_mapped_sorted_rmdup.bam" --java-mem-size=4G -gd HUMAN -nt 32 -outdir qualimap)
 	echo "QUALIMAP DONE"
 	$(samtools index $snfile"_mapped_sorted_rmdup.bam")
 	$(samtools mpileup --positions ../../hapCon/reference/chrX_1000G_NC.bed -r NC_000023.11 -q 30 -Q 30 -o $snfile"_mapped_sorted_rmdup.mpileup" $snfile"_mapped_sorted_rmdup.bam")
 	$(hapConX -m $snfile"_mapped_sorted_rmdup.mpileup" -r ../../hapCon/reference/chrX_1000G.hdf5 --meta ../../hapCon/reference/meta_df_all.csv)
 	echo "CONTAMINATION ESTIMATING DONE"
-	$(mapDamage -i $snfile"_mapped_sorted_rmdup.bam" -r ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna --diff-hangs --no-stats)
+	$(mapDamage -i $snfile"_mapped_sorted_rmdup.bam" -r ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna --diff-hangs --no-stats --folder=mapDamage)
 	echo "DAMAGE ESTIMATING DONE"
-	$(bcftools mpileup -Ou -h100 --skip-indels -o30 --annotate FORMAT/AD,FORMAT/ADF,FORMAT/ADR,FORMAT/DP,FORMAT/SP,INFO/AD,INFO/ADF,INFO/ADR -f ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna $snfile"_mapped_sorted_rmdup.bam" -o bcfmpileup.bcf)
+	$(bcftools mpileup -Ov -h100 --skip-indels -o30 --annotate FORMAT/AD,FORMAT/ADF,FORMAT/ADR,FORMAT/DP,FORMAT/SP,INFO/AD,INFO/ADF,INFO/ADR -f ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna $snfile"_mapped_sorted_rmdup.bam" -o bcfmpileup.vcf)
 	echo "LIKELIHOODS ESTIMATING DONE"
-	$(bcftools view --include 'FMT/DP>=1' -o bcfview.bcf bcfmpileup.bcf)
+	$(bcftools view --include 'FMT/DP>=1' -o bcfview.bcf bcfmpileup.vcf)
 	$(bcftools call -m -v -Ov -o bcfcall.vcf bcfview.bcf)
 	echo "VCF CALLING DONE"
 	awk '/^#/' bcfcall.vcf > chrY.vcf
 	awk '/^#/' bcfcall.vcf > mito.vcf
 	awk '/^NC_012920.1/' bcfcall.vcf >> mito.vcf
 	awk '/^NC_000024.10/' bcfcall.vcf >> chrY.vcf
+	echo "Total variants" grep -v '^#' bcfmpileup.vcf | wc -l >> total.txt
+	echo "Filtered variants" grep -v '^#' bcfcall.vcf | wc -l >> total.txt
 	python3 ../../y_chr_snp.py $snfile"_mapped_sorted_rmdup.bam"
 	#awk '{$1=""}1' temp.csv > YSNP.csv
 	#rm temp.csv
 	echo "HAPLOGROUP DETECTION DONE"
 
-	mv $snfile".collapsed adapterremoval/"
-	mkdir vcf_calling; mv bcfcall.vcf bcfmpileup.bcf bcfview.bcf YSNP.xlsx chrY.vcf mito.vcf vcf_calling/
+	#mv $snfile".collapsed adapterremoval/"
+	mkdir vcf_calling; mv bcfcall.vcf bcfmpileup.vcf bcfview.bcf YSNP.xlsx chrY.vcf mito.vcf vcf_calling/
 	mkdir contamination; mv $snfile"_mapped_sorted_rmdup.hapCon.txt" $snfile"_mapped_sorted_rmdup.hdf5" $snfile"_mapped_sorted_rmdup.mpileup" contamination/
 	mkdir mapping_data; mv $snfile"_mapped_sorted_rmdup.bam.bai" rmdup.metrics.txt $snfile"_mapped_sorted.bam" $snfile"_mapped_sorted_rmdup.bam" mapping_data/
 	$(multiqc .)
