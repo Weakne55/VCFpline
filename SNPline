@@ -54,7 +54,7 @@ processing()
 	depth=$(bc<<<"scale=3;$depth_tmp/3099734149")
 	echo "Depth" $depth"X" >> total.txt
 
-	coverage=$(bedtools bamtobed -i e13_S1_mapped_sorted_rmdup.bam | awk '{sum+=$3-$2} END {print sum/3099734149*100}')
+	coverage=$(bedtools bamtobed -i $snfile"_mapped_sorted_rmdup.bam" | awk '{sum+=$3-$2} END {print sum/3099734149*100}')
 	echo "Coverage" $coverage"%" >> total.txt
 	
 
@@ -90,7 +90,7 @@ processing()
 	mkdir contamination; mv $snfile"_mapped_sorted_rmdup.hapCon.txt" $snfile"_mapped_sorted_rmdup.hdf5" $snfile"_mapped_sorted_rmdup.mpileup" contamination/
 	mkdir mapping_data; mv $snfile"_mapped_sorted_rmdup.bam.bai" rmdup.metrics.txt $snfile"_mapped_sorted.bam" $snfile"_mapped_sorted_rmdup.bam" mapping_data/
 	$(multiqc .)
-	echo $snfile"\t"$total"\t"$mapped"\t"$percentage"%\t"$depth"X\t"$coverage"%\t"$var >> ../stat.txt
+	echo -e $snfile"\t"$total"\t"$mapped"\t"$percentage"%\t"$depth"X\t"$coverage"%\t"$var >> ../stat.txt
 	cd ../..
 
 
@@ -103,12 +103,15 @@ if [ "$#" -eq 1 ]; then
 	cp -r $1 "initial_data_"$1
 	cd $1
 	touch stat.txt
-	echo "ID"'\t'"READS"'\t'"MAPPED"'\t'"%"'\t'"DEPTH"'\t'"COVERAGE"'\t'"VARIANTS" > stat.txt
+	echo -e "ID\tREADS\tMAPPED\t%MAPPED\tDEPTH\tCOVERAGE\tVARIANTS" > stat.txt
 	cd ..
 	divdir $1
 	for dir in $1*
 	do
+	if [ -d "$dir" ]
+	then
 		processing $dir 
+	fi
 	done
 #elif [ "$#" -eq 2 ] && [ "$1" = "-o" ]; then
 
