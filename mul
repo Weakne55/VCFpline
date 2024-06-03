@@ -1,0 +1,13 @@
+#!/bin/bash
+
+processing()
+{
+        cd $1
+	$(multiqc .)
+	cd ../../
+}
+
+for dir in $1*
+        do
+		processing $dir 
+	done

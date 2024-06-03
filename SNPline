@@ -49,11 +49,12 @@ processing()
 	percentage=$(bc<<<"scale=3;$mapped/$total*100")
 	echo "% mapped" $percentage"%" >> total.txt
 	
-	size=$(samtools view -H  $snfile"_mapped_sorted_rmdup.bam" | grep -P '^@SQ' | cut -f 3 -d ':' | awk '{sum+=$1} END {print sum}')
-	depth=$(samtools depth $snfile"_mapped_sorted_rmdup.bam" |  awk '{sum+=$3} END { print "Average = ",sum/'$size'}')
+	#size=$(samtools view -H  $snfile"_mapped_sorted_rmdup.bam" | grep -P '^@SQ' | cut -f 3 -d ':' | awk '{sum+=$1} END {print sum}')
+	depth_tmp=$(samtools depth $snfile"_mapped_sorted_rmdup.bam" |  awk '{sum+=$3} END { print sum}')
+	depth=$(bc<<<"scale=3;$depth_tmp/3099734149")
 	echo "Depth" $depth"X" >> total.txt
 
-	coverage=$(bedtools bamtobed -i e13_S1_mapped_sorted_rmdup.bam | awk '{sum+=$3-$2} END {print sum/'$size'*100}')
+	coverage=$(bedtools bamtobed -i e13_S1_mapped_sorted_rmdup.bam | awk '{sum+=$3-$2} END {print sum/3099734149*100}')
 	echo "Coverage" $coverage"%" >> total.txt
 	
 
@@ -75,8 +76,10 @@ processing()
 	awk '/^#/' bcfcall.vcf > mito.vcf
 	awk '/^NC_012920.1/' bcfcall.vcf >> mito.vcf
 	awk '/^NC_000024.10/' bcfcall.vcf >> chrY.vcf
-	echo "Total variants" grep -v '^#' bcfmpileup.vcf | wc -l >> total.txt
-	echo "Filtered variants" grep -v '^#' bcfcall.vcf | wc -l >> total.txt
+
+	#echo "Total variants" grep -v '^#' bcfmpileup.vcf | wc -l >> total.txt
+	var=$(grep -v '^#' bcfcall.vcf | wc -l)
+	echo "Filtered variants" $var >> total.txt
 	python3 ../../y_chr_snp.py $snfile"_mapped_sorted_rmdup.bam"
 	#awk '{$1=""}1' temp.csv > YSNP.csv
 	#rm temp.csv
@@ -87,6 +90,7 @@ processing()
 	mkdir contamination; mv $snfile"_mapped_sorted_rmdup.hapCon.txt" $snfile"_mapped_sorted_rmdup.hdf5" $snfile"_mapped_sorted_rmdup.mpileup" contamination/
 	mkdir mapping_data; mv $snfile"_mapped_sorted_rmdup.bam.bai" rmdup.metrics.txt $snfile"_mapped_sorted.bam" $snfile"_mapped_sorted_rmdup.bam" mapping_data/
 	$(multiqc .)
+	echo $snfile"\t"$total"\t"$mapped"\t"$percentage"%\t"$depth"X\t"$coverage"%\t"$var >> ../stat.txt
 	cd ../..
 
 
@@ -97,6 +101,10 @@ processing()
 if [ "$#" -eq 1 ]; then
 	unset DISPLAY
 	cp -r $1 "initial_data_"$1
+	cd $1
+	touch stat.txt
+	echo "ID"'\t'"READS"'\t'"MAPPED"'\t'"%"'\t'"DEPTH"'\t'"COVERAGE"'\t'"VARIANTS" > stat.txt
+	cd ..
 	divdir $1
 	for dir in $1*
 	do

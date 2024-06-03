@@ -1,0 +1,16 @@
+#!/bin/bash
+
+processing()
+{
+        cd $1
+	mv *".collapsed" adapterremoval
+	mv bcfcall.vcf bcfmpileup.bcf bcfview.bcf YSNP.csv chrY.vcf vcf_calling
+	mv *".hapCon.txt" *".hdf5" *".mpileup" contamination
+	mv *".bam.bai" rmdup.metrics.txt *".bam" mapping_data
+	cd ../../
+}
+
+for dir in $1*
+        do
+		processing $dir 
+	done
