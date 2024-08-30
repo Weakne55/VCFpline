@@ -42,7 +42,8 @@ processing()
 	#$(bwa samse ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna final.sai $file | samtools sort -O bam > aln_mapped_sorted.bam)
 	echo "MAPPING AND SORTING DONE"
 	rm $snfile".collapsed"
-	$(picard MarkDuplicates INPUT=$snfile"_mapped_sorted.bam" OUTPUT=$snfile"_mapped_sorted_rmdup.bam" METRICS_FILE=rmdup.metrics.txt REMOVE_DUPLICATES=TRUE AS=TRUE VALIDATION_STRINGENCY=SILENT)
+	$(samtools view -h -b -q 30 $snfile"_mapped_sorted.bam" -o $snfile".mapQ30.bam")
+	$(picard MarkDuplicates INPUT=$snfile".mapQ30.bam" OUTPUT=$snfile"_mapped_sorted_rmdup.bam" METRICS_FILE=rmdup.metrics.txt REMOVE_DUPLICATES=TRUE AS=TRUE VALIDATION_STRINGENCY=SILENT)
 	echo "DUPLICATES REMOVING DONE"
 
 	mapped=$(samtools stats $snfile"_mapped_sorted_rmdup.bam" |grep ^SN | cut -f 2- | grep "^reads mapped:" | awk '{print $3}')
