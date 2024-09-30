@@ -4,11 +4,11 @@ divdir()
 {
 for file in $1*
 do 
-	path="${file%%_L*}"
+	path="${file%%_[12].fq.gz*}"
 	mkdir -p $path
 	result="${path#*/}"
-	filename_R1="$1${result}_L01_2_1.fq.gz"
-	filename_R2="$1${result}_L01_2_2.fq.gz"
+	filename_R1="$1${result}_1.fq.gz"
+	filename_R2="$1${result}_2.fq.gz"
 	mv $filename_R1 $filename_R2 $path 
 done
 }
@@ -19,8 +19,8 @@ processing()
 	array=($(ls))
 	file1=${array[0]}
 	file2=${array[1]}
-	echo file1 file2
-	snfile="${file1%%_L*}"
+	echo $file1 $file2
+	snfile="${file1%%.fq*}"
 	$(touch total.txt)
 	echo "ID sample" $snfile > total.txt
 	total=$(zcat $file1 | echo $((`wc -l`/2))) 
@@ -28,7 +28,7 @@ processing()
 	mkdir "FASTQC_PRE"
 	$(fastqc -q -o FASTQC_PRE $file1 $file2)
 	echo "FASTQC DONE"
-	$(AdapterRemoval --file1 $file1 --file2 $file2 --adapter1 AAGTCGGAGGCCAAGCGGTCTTAGGAAGACAAGGACGGAATCCAACTCCTTGGCTCACAGAAGGACAAGGGTAATATAAAAAAAAATGA --adapter2 AAGTCGGATCGTAGCCATGTCGTTCTGTGAGCCAAGGAGTTGGATTCCGTCCTTGTCTTCCTAAGACCCCATGATTTTAAATTTATTAT --basename $snfile --collapse --preserve5p --minadapteroverlap 5 --trimns --minlength 30)
+	$(AdapterRemoval --file1 $file1 --file2 $file2 --adapter1 AAGTCGGAGGCCAAGCGGTCTTAGGAAGACAAGGACGGAATCCAACTCCTTGGCTCACAGAAGGACAAGGGTAATATAAAAAAAAATGA --adapter2 AAGTCGGATCGTAGCCATGTCGTTCTGTGAGCCAAGGAGTTGGATTCCGTCCTTGTCTTCCTAAGACCCCATGATTTTAAATTTATTAT --basename $snfile --collapse --preserve5p --minadapteroverlap 5 --trimns --minlength 20)
 	echo "ADAPTER REMOVAL DONE"
 	#cp $snfile.collapsed temp.collapsed
 	file=$snfile.collapsed
@@ -42,8 +42,8 @@ processing()
 	#$(bwa samse ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna final.sai $file | samtools sort -O bam > aln_mapped_sorted.bam)
 	echo "MAPPING AND SORTING DONE"
 	rm $snfile".collapsed"
-	$(samtools view -h -b -q 30 $snfile"_mapped_sorted.bam" -o $snfile".mapQ30.bam")
-	$(picard MarkDuplicates INPUT=$snfile".mapQ30.bam" OUTPUT=$snfile"_mapped_sorted_rmdup.bam" METRICS_FILE=rmdup.metrics.txt REMOVE_DUPLICATES=TRUE AS=TRUE VALIDATION_STRINGENCY=SILENT)
+	$(samtools view -h -b -q 20 $snfile"_mapped_sorted.bam" -o $snfile".mapQ20.bam")
+	$(picard MarkDuplicates INPUT=$snfile".mapQ20.bam" OUTPUT=$snfile"_mapped_sorted_rmdup.bam" METRICS_FILE=rmdup.metrics.txt REMOVE_DUPLICATES=TRUE AS=TRUE VALIDATION_STRINGENCY=SILENT)
 	echo "DUPLICATES REMOVING DONE"
 
 	mapped=$(samtools stats $snfile"_mapped_sorted_rmdup.bam" |grep ^SN | cut -f 2- | grep "^reads mapped:" | awk '{print $3}')
@@ -64,7 +64,7 @@ processing()
 	$(qualimap bamqc -bam $snfile"_mapped_sorted_rmdup.bam" --java-mem-size=4G -gd HUMAN -nt 32 -outdir qualimap)
 	echo "QUALIMAP DONE"
 	$(samtools index $snfile"_mapped_sorted_rmdup.bam")
-	$(samtools mpileup --positions ../../hapCon/reference/chrX_1000G_NC.bed -r NC_000023.11 -q 30 -Q 30 -o $snfile"_mapped_sorted_rmdup.mpileup" $snfile"_mapped_sorted_rmdup.bam")
+	$(samtools mpileup --positions ../../hapCon/reference/chrX_1000G_NC.bed -r NC_000023.11 -q 20 -Q 20 -o $snfile"_mapped_sorted_rmdup.mpileup" $snfile"_mapped_sorted_rmdup.bam")
 	$(hapConX -m $snfile"_mapped_sorted_rmdup.mpileup" -r ../../hapCon/reference/chrX_1000G.hdf5 --meta ../../hapCon/reference/meta_df_all.csv)
 	echo "CONTAMINATION ESTIMATING DONE"
 	$(mapDamage -i $snfile"_mapped_sorted_rmdup.bam" -r ../../ncbi_dataset/data/GCF_000001405.26/GCF_000001405.26_GRCh38_genomic.fna --diff-hangs --no-stats --folder=mapDamage)
