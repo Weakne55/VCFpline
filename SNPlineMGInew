@@ -114,11 +114,11 @@ processing()
 	echo "QUALIMAP DONE"
 
 
-	$(bcftools mpileup --ignore-RG -f ../../ncbi_dataset/data/GCF_000001405.26/Homo_sapiens_assembly38_NoChrM.fasta "${snfile}.mapped.sorted.rmdup.bam" |\
+	$(bcftools mpileup --ignore-RG -I -f ../../ncbi_dataset/data/GCF_000001405.26/Homo_sapiens_assembly38_NoChrM.fasta "${snfile}.mapped.sorted.rmdup.bam" |\
 	bcftools call --ploidy 1 -v -Oz -m -o "${snfile}.snp.vcf")
 
-	$(bcftools mpileup --ignore-RG -f ../../mito.fasta "${snfile}.mito.rmdup.bam" |\
-bcftools call --ploidy 1 -v -Oz -m -o "${snfile}.MT.snp.vcf")
+	$(bcftools mpileup -I --ignore-RG -f ../../mito.fasta "${snfile}.mito.rmdup.bam" |\
+bcftools call --ploidy 1 -v -Oz -m -o "${snfile}.snp.MT.vcf")
 	
 	$(bgzip -c $snfile".snp.vcf" > $snfile".snp.vcf.gz")
 	$(bgzip -c $snfile".snp.MT.vcf" > $snfile".snp.MT.vcf.gz")
@@ -142,9 +142,9 @@ bcftools call --ploidy 1 -v -Oz -m -o "${snfile}.MT.snp.vcf")
 	
 	echo -e "ID\tTotal\tMapped\t%Mapped\tNuc5'CT\tMt5'CT\tNucCoverage\tNucDepth\tMtCoverage\tMtDepth\tYCoverage\tXCoverage\tSex\tHaplogroup\tVariants\tMtVariants" >> total.txt
 
-	echo -e "${snfile}\t${total}\t${mapped}\t${percentage}%\t${ct}\t${mct}\t${coverage}%\t${depth}X\t${mtcov}\t${mtdepth}X\t${Ycov}%\t${Xcov}%\t$sex\t${haplogroup}\t${var}\t${mtvar}" >> total.txt
+	echo -e "${snfile}\t${total}\t${mapped}\t${percentage}%\t${ct}\t${mct}\t${coverage}%\t${depth}X\t${mtcov}\t${mtdep}X\t${Ycov}%\t${Xcov}%\t$sex\t${haplogroup}\t${var}\t${mtvar}" >> total.txt
 
-	echo -e "${snfile}\t${total}\t${mapped}\t${percentage}%\t${ct}\t${mct}\t${coverage}%\t${depth}X\t${mtcov}\t${mtdepth}X\t${Ycov}%\t${Xcov}%\t$sex\t${haplogroup}\t${var}\t${mtvar}" >> ../stat.txt
+	echo -e "${snfile}\t${total}\t${mapped}\t${percentage}%\t${ct}\t${mct}\t${coverage}%\t${depth}X\t${mtcov}\t${mtdep}X\t${Ycov}%\t${Xcov}%\t$sex\t${haplogroup}\t${var}\t${mtvar}" >> ../stat.txt
 
 #	echo -e $snfile"\t"$total"\t"$mapped"\t"$percentage"%\t"$depth"X\t"$coverage"%\t"$var >> ../stat.txt
 	rm *.gz
