@@ -4,11 +4,11 @@ divdir()
 {
 for file in $1*
 do 
-	path="${file%%_L*}"
+	path="${file%%_R*}"
 	mkdir -p $path
 	result="${path#*/}"
-	filename_R1="$1${result}_L001_R1_001.fastq.gz"
-	filename_R2="$1${result}_L001_R2_001.fastq.gz"
+	filename_R1="$1${result}_R1_001.fastq.gz"
+	filename_R2="$1${result}_R2_001.fastq.gz"
 	mv $filename_R1 $filename_R2 $path 
 done
 }
@@ -19,7 +19,7 @@ processing()
 	array=($(ls))
 	file1=${array[0]}
 	file2=${array[1]}
-	snfile="${file1%%_L*}"
+	snfile="${file1%%_R*}"
 	$(touch total.txt)
 	echo "ID sample" $snfile > total.txt
 	total=$(zcat $file1 | echo $((`wc -l`/2))) 

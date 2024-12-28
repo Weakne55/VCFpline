@@ -1,0 +1,184 @@
+#!/bin/bash
+
+divdir()
+{
+for file in $1*
+do 
+	#path="${file%%_[12].fq.gz*}"
+	path="${file%%_R[12]_001.fastq.gz*}"
+	mkdir -p $path
+	result="${path#*/}"
+	#filename_R1="$1${result}_1.fq.gz"
+	filename_R1="$1${result}_R1_001.fastq.gz"
+	#filename_R2="$1${result}_2.fq.gz"
+	filename_R2="$1${result}_R2_001.fastq.gz"
+	mv $filename_R1 $filename_R2 $path 
+done
+}
+
+processing()
+{
+	cd $1
+	array=($(ls))
+	file1=${array[0]}
+	file2=${array[1]}
+	echo $file1 $file2
+	snfile="${file1%%.fq*}"
+	$(touch total.txt)
+	total=$(zcat $file1 | echo $((`wc -l`/2))) 
+	mkdir "FASTQC_PRE"
+	$(fastqc -q -o FASTQC_PRE $file1 $file2)
+	echo "FASTQC DONE"
+	$(AdapterRemoval --file1 $file1 --file2 $file2 --adapter1 AAGTCGGAGGCCAAGCGGTCTTAGGAAGACAAGGACGGAATCCAACTCCTTGGCTCACAGAAGGACAAGGGTAATATAAAAAAAAATGA --adapter2 AAGTCGGATCGTAGCCATGTCGTTCTGTGAGCCAAGGAGTTGGATTCCGTCCTTGTCTTCCTAAGACCCCATGATTTTAAATTTATTAT --basename $snfile --trimns --trimqualities)
+
+	echo "ADAPTER REMOVAL DONE"
+	mkdir "FASTQC_POST"
+	$(fastqc -t 64 -q -o FASTQC_POST $snfile.pair1.truncated $snfile.pair2.truncated)
+
+	$(bwa mem -k19 -r2.5 -t64 ../../ncbi_dataset/data/GCF_000001405.26/Homo_sapiens_assembly38_NoChrM.fasta $snfile.pair1.truncated $snfile.pair2.truncated | samtools sort -o $snfile".mapped.sorted.bam")
+	
+	$(bwa mem -k19 -r2.5 -t64 ../../mito.fasta $snfile.pair1.truncated $snfile.pair2.truncated | samtools sort -o $snfile".mito.bam")
+	
+	echo "MAPPING AND SORTING DONE"
+
+	$(picard MarkDuplicates INPUT=$snfile".mapped.sorted.bam" OUTPUT=$snfile".mapped.sorted.rmdup.bam" METRICS_FILE=rmdup.metrics.txt REMOVE_DUPLICATES=TRUE AS=TRUE VALIDATION_STRINGENCY=SILENT)
+
+	$(picard MarkDuplicates INPUT=$snfile".mito.bam" OUTPUT=$snfile".mito.rmdup.bam" METRICS_FILE=rmdup.metrics.txt REMOVE_DUPLICATES=TRUE AS=TRUE VALIDATION_STRINGENCY=SILENT)
+	rm rmdup.metrics.txt
+	echo "DUPLICATES REMOVING DONE"
+	
+	rm $snfile".mapped.sorted.bam" $snfile".mito.bam"
+
+	rm *".truncated" *".discarded" *".settings" *".singleton"
+
+	mapped=$(samtools stats $snfile".mapped.sorted.rmdup.bam" |grep ^SN | cut -f 2- | grep "^reads mapped:" | awk '{print $3}')
+	percentage=$(bc<<<"scale=3;$mapped/$total*100")
+	
+	
+	$(qualimap bamqc -bam $snfile".mapped.sorted.rmdup.bam" --java-mem-size=4G -gd HUMAN -nt 32 -outdir qualimap)
+	echo "QUALIMAP DONE"
+
+	$(mapDamage -i  $snfile".mapped.sorted.rmdup.bam"  -r ../../ncbi_dataset/data/GCF_000001405.26/Homo_sapiens_assembly38.fasta --no-stats --folder=mapDamageWG)
+
+	$(mapDamage -i  $snfile".mito.rmdup.bam"  -r ../../mito.fasta --no-stats --folder=mapDamageMito)
+
+	ct=$(awk 'NR==2 {print $2}' mapDamageWG/5pCtoT_freq.txt)
+	mct=$(awk 'NR==2 {print $2}' mapDamageMito/5pCtoT_freq.txt)
+
+
+	$(samtools coverage  $snfile".mapped.sorted.rmdup.bam" > wgcov)
+	$(samtools coverage  $snfile".mito.rmdup.bam" > mitocov)
+
+	mtcov=$(cat mitocov | awk 'NR==2 {print $6}')
+	mtdep=$(cat mitocov | awk 'NR==2 {print $7}')
+
+	coverage=$(awk 'NR>1 {bases+=$5;total+=$3} END {print bases/total*100}' wgcov)
+
+	$(samtools index $snfile".mapped.sorted.rmdup.bam" )
+	$(samtools index  $snfile".mito.rmdup.bam" )
+
+	$(samtools coverage -r chrX  $snfile".mapped.sorted.rmdup.bam"  > Xcov)
+	$(samtools coverage -r chrY  $snfile".mapped.sorted.rmdup.bam"  > Ycov)
+
+	Xcov=$(cat Xcov | awk 'NR==2 {print $6}')
+	Ycov=$(cat Ycov | awk 'NR==2 {print $6}')
+
+	depth=$(samtools depth -a  $snfile".mapped.sorted.rmdup.bam"  | awk '{sum+=$3} END {print sum/NR}')
+
+	$(samtools view -q 30 $snfile".mapped.sorted.rmdup.bam" | python ../../XYkaryotyper.py > xykar)
+
+	sex=$(awk 'NR==2 {print $7}' xykar)
+
+
+	$(bcftools mpileup --ignore-RG --min-BQ 20 -f ../../ncbi_dataset/data/GCF_000001405.26/Homo_sapiens_assembly38_NoChrM.fasta  $snfile".mapped.sorted.rmdup.bam" | bcftools call --ploidy 1 -Oz -m -o $snfile".vcf")
+
+	$(bgzip -c $snfile".vcf" > $snfile".vcf.gz")
+	$(tabix -p vcf $snfile".vcf.gz")
+
+	$(Yleaf -bam $snfile".mapped.sorted.rmdup.bam" -o $snfile".yleaf.result" --reference_genome hg38 -r 1 -t 64 -dh -old)
+	rm $snfile".vcf"
+	haplogroup=$(awk 'NR==2 {print $2}' "${snfile}.yleaf.result/hg_prediction.hg" | awk -F'(' '{print $1}')
+
+
+	$(samtools calmd -b  $snfile".mito.rmdup.bam"  ../../mito.fasta >  $snfile".mito.rmdup.baq.bam" ;samtools index $snfile".mito.rmdup.baq.bam" )
+
+	mkdir schmutzi
+	$(../../schmutzi/src/contDeam.pl --library double --out "schmutzi/"$snfile $snfile".mito.rmdup.baq.bam" --ref ../../mito.fasta)
+
+	$(../../schmutzi/src/schmutzi.pl --t 128 --notusepredc --ref ../../mito.fasta --out "schmutzi/${snfile}_npred" "schmutzi/${snfile}" ../../schmutzi/share/schmutzi/alleleFreqMT/eurasian/freqs/ $snfile".mito.rmdup.baq.bam")
+
+	$(../../schmutzi/src/schmutzi.pl --t 128 --ref ../../mito.fasta --out "schmutzi/${snfile}_wpred" "schmutzi/${snfile}" ../../schmutzi/share/schmutzi/alleleFreqMT/eurasian/freqs/ $snfile".mito.rmdup.baq.bam")
+
+
+	$(qualimap bamqc -bam $snfile".mapped.sorted.rmdup.bam" --java-mem-size=4G -gd HUMAN -nt 32 -outdir qualimap)
+	echo "QUALIMAP DONE"
+
+
+	$(bcftools mpileup --ignore-RG -I -f ../../ncbi_dataset/data/GCF_000001405.26/Homo_sapiens_assembly38_NoChrM.fasta "${snfile}.mapped.sorted.rmdup.bam" |\
+	bcftools call --ploidy 1 -v -Oz -m -o "${snfile}.snp.vcf")
+
+	$(bcftools mpileup -I --ignore-RG -f ../../mito.fasta "${snfile}.mito.rmdup.bam" |\
+bcftools call --ploidy 1 -v -Oz -m -o "${snfile}.snp.MT.vcf")
+	
+	$(bgzip -c $snfile".snp.vcf" > $snfile".snp.vcf.gz")
+	$(bgzip -c $snfile".snp.MT.vcf" > $snfile".snp.MT.vcf.gz")
+
+	$(tabix -p vcf $snfile".snp.vcf.gz")
+	$(tabix -p vcf $snfile".snp.MT.vcf.gz")
+
+	$(rm $snfile".snp.vcf")
+	$(rm $snfile".snp.MT.vcf")
+
+	var=$(bcftools view -H $snfile".snp.vcf.gz" | wc -l)
+	mtvar=$(bcftools view -H $snfile".snp.MT.vcf.gz" | wc -l)
+
+	$(bcftools view --with-header -Oz -o ${snfile}.Y.vcf -r chrY ${snfile}.snp.vcf.gz --threads 64)
+	$(samtools index ${snfile}.mapped.sorted.rmdup.bam)
+
+	$(../../angsd/angsd -i ${snfile}.mapped.sorted.rmdup.bam -r chrX:5000000-154900000 -doCounts 1 -iCounts 1 -minMapQ 30 -minQ 30 -out ${snfile}.doCounts)
+
+	$(../../angsd/misc/contamination -a ${snfile}.doCounts.icnts.gz -h ../../angsd/RES/HapMapChrX.gz 2 > ${snfile}.X.contamination.out)
+
+	
+	echo -e "ID\tTotal\tMapped\t%Mapped\tNuc5'CT\tMt5'CT\tNucCoverage\tNucDepth\tMtCoverage\tMtDepth\tYCoverage\tXCoverage\tSex\tHaplogroup\tVariants\tMtVariants" >> total.txt
+
+	echo -e "${snfile}\t${total}\t${mapped}\t${percentage}%\t${ct}\t${mct}\t${coverage}%\t${depth}X\t${mtcov}\t${mtdep}X\t${Ycov}%\t${Xcov}%\t$sex\t${haplogroup}\t${var}\t${mtvar}" >> total.txt
+
+	echo -e "${snfile}\t${total}\t${mapped}\t${percentage}%\t${ct}\t${mct}\t${coverage}%\t${depth}X\t${mtcov}\t${mtdep}X\t${Ycov}%\t${Xcov}%\t$sex\t${haplogroup}\t${var}\t${mtvar}" >> ../stat.txt
+
+#	echo -e $snfile"\t"$total"\t"$mapped"\t"$percentage"%\t"$depth"X\t"$coverage"%\t"$var >> ../stat.txt
+	rm *.gz
+	cd ../..
+
+
+}
+
+
+
+if [ "$#" -eq 1 ]; then
+	unset DISPLAY
+	cp -r $1 "initial_data_"$1
+	cd $1
+	touch stat.txt
+	#echo -e "ID\tREADS\tMAPPED\t%MAPPED\tDEPTH\tCOVERAGE\tVARIANTS" > stat.txt
+	echo -e "ID\tTotal\tMapped\t%Mapped\tNuc5'CT\tMt5'CT\tNucCoverage\tNucDepth\tMtCoverage\tMtDepth\tYCoverage\tXCoverage\tSex\tHaplogroup\tVariants\tMtVariants" >> stat.txt
+	cd ..
+	divdir $1
+	for dir in $1*
+	do
+	if [ -d "$dir" ]
+	then
+		processing $dir 
+	fi
+	done
+#elif [ "$#" -eq 2 ] && [ "$1" = "-o" ]; then
+
+#	cp -r $2 snpline_results
+#	pp="snpline_results"
+#	processing $pp
+else
+	echo "Usage: $0 dirname"
+	exit 1
+fi
+
+

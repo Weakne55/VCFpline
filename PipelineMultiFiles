@@ -1,0 +1,102 @@
+#!/bin/bash
+
+divdir()
+{
+for file in $1*
+do 
+	path="${file%%_[12].fq.gz*}"
+	mkdir -p $path
+	result="${path#*/}"
+	filename_R1="$1${result}_1.fq.gz"
+	filename_R2="$1${result}_2.fq.gz"
+	mv $filename_R1 $filename_R2 $path 
+done
+}
+
+processing()
+{
+	cd $1
+	array=($(ls))
+	file1=${array[0]}
+	file2=${array[1]}
+	echo $file1 $file2
+	snfile="${file1%%.fq*}"
+	$(touch total.txt)
+	echo "ID sample" $snfile > total.txt
+	total=$(zcat $file1 | echo $((`wc -l`/2))) 
+	echo "total reads" $total >> total.txt
+	mkdir "FASTQC_PRE"
+	$(fastqc -t 64 -q -o FASTQC_PRE $file1 $file2)
+	echo "FASTQC DONE"
+
+	$(AdapterRemoval --file1 $file1 --file2 $file2 --adapter1 AAGTCGGAGGCCAAGCGGTCTTAGGAAGACAAGGACGGAATCCAACTCCTTGGCTCACAGAAGGACAAGGGTAATATAAAAAAAAATGA --adapter2 AAGTCGGATCGTAGCCATGTCGTTCTGTGAGCCAAGGAGTTGGATTCCGTCCTTGTCTTCCTAAGACCCCATGATTTTAAATTTATTAT --basename $snfile --trimns --trimqualities)
+
+	echo "ADAPTER REMOVAL DONE"
+	mkdir "FASTQC_POST"
+	$(fastqc -t 64 -q -o FASTQC_POST $snfile.pair1.truncated $snfile.pair2.truncated)
+
+	$(bwa mem -k19 -r2.5 -t64 ../../ncbi_dataset/data/GCF_000001405.26/Homo_sapiens_assembly38.fasta $snfile.pair1.truncated $snfile.pair2.truncated | samtools sort -o $snfile".mapped.sorted.bam")
+	
+	$(bwa mem -k19 -r2.5 -t64 ../../mito.fasta $snfile.pair1.truncated $snfile.pair2.truncated | samtools sort -o $snfile".mito.bam")
+	
+	echo "MAPPING AND SORTING DONE"
+
+	$(picard MarkDuplicates INPUT=$snfile".mapped.sorted.bam" OUTPUT=$snfile".mapped.sorted.rmdup.bam" METRICS_FILE=rmdup.metrics.txt REMOVE_DUPLICATES=TRUE AS=TRUE VALIDATION_STRINGENCY=SILENT)
+
+	$(picard MarkDuplicates INPUT=$snfile".mito.bam" OUTPUT=$snfile".mito.rmdup.bam" METRICS_FILE=rmdup.metrics.txt REMOVE_DUPLICATES=TRUE AS=TRUE VALIDATION_STRINGENCY=SILENT)
+	rm rmdup.metrics.txt
+	echo "DUPLICATES REMOVING DONE"
+	
+	rm $snfile".mapped.sorted.bam" $snfile".mito.bam"
+
+	rm *".truncated" *".discarded" *".settings" *".singleton"
+
+	mapped=$(samtools stats $snfile".mapped.sorted.rmdup.bam" |grep ^SN | cut -f 2- | grep "^reads mapped:" | awk '{print $3}')
+	echo "mapped reads" $mapped>> total.txt
+	percentage=$(bc<<<"scale=3;$mapped/$total*100")
+	echo "% mapped" $percentage"%" >> total.txt
+	
+	depth_tmp=$(samtools depth -a $snfile".mapped.sorted.rmdup.bam" |  awk '{sum+=$3} END {print sum/NR}')
+	depth=$(bc<<<"scale=3;$depth_tmp")
+	echo "Depth" $depth"X" >> total.txt
+
+	#coverage=$(bedtools bamtobed -i $snfile".mapped.sorted.rmdup.bam" | awk '{sum+=$3-$2} END {print sum/3099734149*100}')
+	coverage=$(samtools coverage $snfile".mapped.sorted.rmdup.bam" | awk 'NR>1 {bases+=$5;total+=$3} END {print bases/total*100}' )
+	echo "Coverage" $coverage"%" >> total.txt
+	
+	
+	$(qualimap bamqc -bam $snfile".mapped.sorted.rmdup.bam" --java-mem-size=4G -gd HUMAN -nt 32 -outdir qualimap)
+	echo "QUALIMAP DONE"
+
+	$(mapDamage -i $snfile".mapped.sorted.rmdup.bam" -r ../../ncbi_dataset/data/GCF_000001405.26/Homo_sapiens_assembly38.fasta --no-stats --folder=mapDamage)
+
+	echo -e $snfile"\t"$total"\t"$mapped"\t"$percentage"%\t"$depth"X\t"$coverage"%" >> ../stat.txt
+	rm *.gz
+	cd ../..
+
+
+}
+
+
+
+if [ "$#" -eq 1 ]; then
+	unset DISPLAY
+	cp -r $1 "initial_data_"$1
+	cd $1
+	touch stat.txt
+	echo -e "ID\tREADS\tMAPPED\t%MAPPED\tDEPTH\tCOVERAGE" > stat.txt
+	cd ..
+	divdir $1
+	for dir in $1*
+	do
+	if [ -d "$dir" ]
+	then
+		processing $dir 
+	fi
+	done
+else
+	echo "Usage: $0 dirname"
+	exit 1
+fi
+
+
